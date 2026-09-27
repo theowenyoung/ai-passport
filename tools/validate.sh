@@ -33,6 +33,16 @@ run_static_checks() {
         tests/test_demo_navigation.c main/demo_navigation.c \
         -o "${test_dir}/test_demo_navigation"
     "${test_dir}/test_demo_navigation"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_card_layout.c main/card_layout.c -o "${test_dir}/test_card_layout"
+    "${test_dir}/test_card_layout"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_card_sched.c main/card_sched.c main/card_pack.c -o "${test_dir}/test_card_sched"
+    "${test_dir}/test_card_sched"
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/blog_cards_fixture.py "${test_dir}/cards_fixture.bin"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_card_pack.c main/card_pack.c -o "${test_dir}/test_card_pack"
+    "${test_dir}/test_card_pack" "${test_dir}/cards_fixture.bin"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"
@@ -71,6 +81,7 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_archive_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_install_passport_skills.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_blog_cards.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"
 }

@@ -15,6 +15,13 @@
 - 添加字库前评估 Flash 与内部 RAM 影响；ESP32-C3 无 PSRAM。
 - 不提交许可不允许分发的字库。
 
+| 文件 | 内容 | 来源、许可与用途 |
+| --- | --- | --- |
+| [`fonts/blog-cards/blog_font_16.c`](fonts/blog-cards/blog_font_16.c)、[`blog_font_20.c`](fonts/blog-cards/blog_font_20.c)、[`blog_font_24.c`](fonts/blog-cards/blog_font_24.c) | LVGL 4 bpp 位图字库，16/20/24 px，未压缩；字形位图在 Flash 中分别约占 0.9/1.3/1.9 MB | 由 Noto Sans SC Regular 转换（`notofonts/noto-cjk` 标签 `Sans2.004`，工具会校验 SHA-256），许可为 SIL Open Font License 1.1，许可全文见 [`fonts/blog-cards/OFL.txt`](fonts/blog-cards/OFL.txt)。由 `main/CMakeLists.txt` 编入博客卡片固件；需要开启 `CONFIG_LV_FONT_FMT_TXT_LARGE`。 |
+| [`fonts/blog-cards/charset.txt`](fonts/blog-cards/charset.txt) | 字库覆盖的 7565 个字形 | GB2312 全部汉字与符号、可打印 ASCII、少量排版符号、博客卡片界面文案，以及当前所有博客卡片里出现的字符。 |
+
+用 `python3 tools/blog_cards.py font` 重新生成以上四个文件（需要 Node.js，会运行 `lv_font_conv@1.5.3`）：命令把锁定版本的字体下载到 `build/` 并校验哈希，重写字符表，再逐个字号转换；之后需要重新编译并刷写固件。`python3 tools/blog_cards.py build` 会报告新博客内容中字符表未覆盖的字。
+
 ## 图片（images）
 
 可复用的源图与生成的显示资产放在 `images/`。
