@@ -79,13 +79,14 @@ typedef struct {
     int8_t line_space;
 } body_font_t;
 
-// Largest first: a card uses the largest size that fits on one screen. Extra
-// line space brings the pitch to about 1.4-1.5 em (34/29/24 px), which reads
-// comfortably for Chinese; measured on the real cards, 74% fit one screen.
+// Largest first: a card uses the largest size that fits on one screen, and a
+// card too long for one screen at 20 px is paged at 20 px. 16 px body text was
+// too small to read comfortably, so it is kept for the header and footer only.
+// Extra line space brings the pitch to about 1.4-1.5 em (34/29 px); measured on
+// the real cards, 59% fit one screen.
 static const body_font_t BODY_FONTS[] = {
     { &blog_font_24, 3 },
     { &blog_font_20, 4 },
-    { &blog_font_16, 3 },
 };
 #define FONT_COUNT (sizeof(BODY_FONTS) / sizeof(BODY_FONTS[0]))
 

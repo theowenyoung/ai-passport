@@ -81,11 +81,11 @@ The baseline hardware-test demo sources (`main/demo_*.c`, `main/ui_pixel*.c`) st
 
 ## Fonts
 
-The body text uses Noto Sans SC at 24, 20, and 16 px, converted to LVGL bitmap fonts that cover all of GB2312 plus every character of the current cards and the UI strings (see [assets/README.md](../../assets/README.md#fonts)). Because the font lives in the firmware, new blog content normally needs only `update`; when the build report lists missing characters, run `font`, then rebuild and flash the firmware.
+The body text uses Noto Sans SC at 24 and 20 px, and the header, footer, and menu use 16 px. All three are LVGL bitmap fonts that cover all of GB2312 plus every character of the current cards and the UI strings (see [assets/README.md](../../assets/README.md#fonts)). Because the font lives in the firmware, new blog content normally needs only `update`; when the build report lists missing characters, run `font`, then rebuild and flash the firmware.
 
 ## Device behavior
 
-**Layout.** Try the large font first, then the medium and small fonts. If the small font still overflows, paginate by whole lines, keeping punctuation off line starts. The header holds only the date (plus the Thread position, such as `12/39`), a star for kept cards, and a battery icon at the top right; quotes and notes are told apart by colour and the quote bar rather than a label, which keeps the header on one line. The last page shows the source at the bottom, and the page number sits at the bottom right. Line pitch is about 1.4-1.5 em (34/29/24 px). Measured with the real font metrics on the current 840 cards: 44% use the large font, 74% fit one screen, 19% need two pages, and the longest needs eight.
+**Layout.** Try the large font first, then the medium one. If the medium font still overflows, paginate by whole lines at that size, keeping punctuation off line starts; body text never drops to 16 px, which proved too small to read. The header holds only the date (plus the Thread position, such as `12/39`), a star for kept cards, and a battery icon at the top right; quotes and notes are told apart by colour and the quote bar rather than a label, which keeps the header on one line. The last page shows the source at the bottom, and the page number sits at the bottom right. Line pitch is about 1.4-1.5 em (34/29 px). Measured with the real font metrics on the current 840 cards: 44% use the large font, 59% fit one screen, 24% need two pages, and the longest needs eleven.
 
 **Buttons.**
 
