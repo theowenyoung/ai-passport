@@ -11,6 +11,8 @@ static int create_calls, callback_calls, fail_create, fail_callback;
 static int fail_adc, fail_channel, fail_cal, fail_read, fail_convert, fail_delete;
 static int raw_mv, reads, events;
 static int64_t clock_us;
+static int pad_level = 1, pad_input, fail_gpio, fail_wake, wake_calls;
+static uint64_t wake_mask;
 
 esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *cfg, adc_oneshot_unit_handle_t *h) {
     assert(cfg->unit_id == BSP_BTN_ADC_UNIT && !adc_live);
@@ -46,6 +48,26 @@ esp_err_t adc_cali_raw_to_voltage(adc_cali_handle_t h, int raw, int *mv) {
     *mv = raw; return ESP_OK;
 }
 int64_t esp_timer_get_time(void) { return clock_us; }
+esp_err_t adc_oneshot_channel_to_io(int unit, int channel, int *io) {
+    assert(unit == BSP_BTN_ADC_UNIT && channel == BSP_BTN_ADC_CHANNEL);
+    *io = 0; return ESP_OK;
+}
+esp_err_t gpio_config(const gpio_config_t *cfg) {
+    // A digital read while the ADC still owns the pad would report a held key.
+    assert(!adc_live && !cal_live && !live_buttons);
+    assert(cfg->pin_bit_mask == 1ULL && cfg->mode == GPIO_MODE_INPUT);
+    assert(cfg->pull_up_en == GPIO_PULLUP_ENABLE && cfg->pull_down_en == GPIO_PULLDOWN_DISABLE);
+    assert(cfg->intr_type == GPIO_INTR_DISABLE);
+    if (fail_gpio) return ESP_FAIL;
+    pad_input = 1; return ESP_OK;
+}
+int gpio_get_level(int io) { assert(io == 0 && pad_input); return pad_level; }
+void esp_rom_delay_us(uint32_t us) { (void)us; }
+esp_err_t esp_deep_sleep_enable_gpio_wakeup(uint64_t mask, esp_deepsleep_gpio_wake_up_mode_t mode) {
+    assert(pad_input && pad_level && mode == ESP_GPIO_WAKEUP_GPIO_LOW);
+    ++wake_calls; wake_mask = mask;
+    return fail_wake ? ESP_ERR_INVALID_ARG : ESP_OK;
+}
 esp_err_t iot_button_create(const button_config_t *cfg, const button_driver_t *driver, button_handle_t *h) {
     (void)cfg;
     if (++create_calls == fail_create) return ESP_ERR_NO_MEM;
@@ -76,6 +98,7 @@ static void event_cb(bsp_btn_t btn, bsp_btn_ev_t ev, void *u) {
 }
 static void reset_faults(void) {
     fail_adc = fail_channel = fail_cal = fail_read = fail_convert = fail_delete = 0;
+    fail_gpio = fail_wake = wake_calls = pad_input = 0; pad_level = 1; wake_mask = 0;
     fail_create = fail_callback = create_calls = callback_calls = 0;
 }
 static void assert_clean(void) {
@@ -97,6 +120,40 @@ static void check_voltage(int mv, int expected) {
         assert(s_drivers[i].base.get_key_level(&s_drivers[i].base) == (i == expected));
     }
     assert(reads - before == CONFIG_ADC_BUTTON_SAMPLE_TIMES);
+}
+static void check_deep_sleep(void) {
+    int level = -1;
+    // Idle keys: ADC released first, then a low-level wake armed by bit mask.
+    reset_faults();
+    assert(bsp_button_init(event_cb, &events) == ESP_OK);
+    assert(bsp_button_prepare_deep_sleep(&level) == ESP_OK && level == 1);
+    assert_clean();
+    assert(wake_calls == 1 && wake_mask == (1ULL << 0));
+    cb_click(NULL, (void *)(intptr_t)BSP_BTN_OK); assert(events == 1);  // no events after release
+
+    // A held key: nothing armed, and polling resumes after a second init.
+    reset_faults(); pad_level = 0;
+    assert(bsp_button_init(event_cb, &events) == ESP_OK);
+    assert(bsp_button_prepare_deep_sleep(&level) == ESP_ERR_INVALID_STATE && level == 0);
+    assert_clean(); assert(wake_calls == 0);
+    retry_success();
+
+    // Keys that never started still release cleanly, and a NULL level is allowed.
+    reset_faults();
+    assert(bsp_button_prepare_deep_sleep(NULL) == ESP_OK && wake_calls == 1);
+
+    reset_faults(); fail_gpio = 1;
+    assert(bsp_button_prepare_deep_sleep(&level) == ESP_FAIL && level == 0 && wake_calls == 0);
+    reset_faults(); fail_wake = 1;
+    assert(bsp_button_prepare_deep_sleep(&level) == ESP_ERR_INVALID_ARG && level == 1);
+
+    // A driver that cannot be deleted keeps the ADC, so the pad is never touched.
+    reset_faults();
+    assert(bsp_button_init(event_cb, &events) == ESP_OK);
+    fail_delete = 1;
+    assert(bsp_button_prepare_deep_sleep(&level) == ESP_ERR_INVALID_STATE && level == 0);
+    assert(!pad_input && wake_calls == 0);
+    fail_delete = 0; button_cleanup(); retry_success();
 }
 int main(void) {
     for (int i = 1; i <= BSP_BTN_COUNT; ++i) {
@@ -131,5 +188,6 @@ int main(void) {
     assert(adc_live && cal_live && live_buttons == BSP_BTN_COUNT);
     assert(bsp_button_init(event_cb, &events) == ESP_ERR_INVALID_STATE);
     fail_delete = 0; button_cleanup(); retry_success();
+    check_deep_sleep();
     puts("BSP button fault-injection tests: PASS");
 }

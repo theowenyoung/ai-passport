@@ -146,6 +146,8 @@ Do not replace the external resistor with the inaccurate internal pull-up. The B
 
 Calibrate thresholds using multiple boards, charge levels, and reasonable temperatures; leave margin between measured distributions rather than relying only on divider theory.
 
+The ladder node is also the only deep-sleep wake source. While the ADC owns GPIO0 its digital level reads 0, so a low-level wake armed on top of it fires at once. `bsp_button_prepare_deep_sleep(&level)` stops polling, releases the ADC unit and calibration, makes the node a digital input with pull-up, and reports its level. With the level high it arms `esp_deep_sleep_enable_gpio_wakeup()` with the bit mask `1ULL << 0` and low-level mode; every key reads well below the 0.25 × VDD low threshold, so any of the three wakes the chip. With a key held it arms nothing and returns `ESP_ERR_INVALID_STATE`. Either way no key events follow until `bsp_button_init()` runs again. Call it first, before the CW2017, ES8311, I2C, and display shutdown steps, so a held key can still cancel the sleep while the buses are intact.
+
 ## 7. Shared I2C
 
 I2C0 uses SDA GPIO10 and SCL GPIO7. ES8311 is 7-bit address `0x18`; CW2017 is `0x63`. `bsp_i2c.c` exclusively owns the bus.

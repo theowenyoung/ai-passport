@@ -6,7 +6,10 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
+#include "esp_sleep.h"
 #include "esp_timer.h"
 
 static const char *TAG = "bsp_btn";
@@ -197,6 +200,45 @@ esp_err_t bsp_button_init(bsp_btn_cb_t cb, void *user) {
     s_sample_valid = false;
     s_ready = true;
     ESP_LOGI(TAG, "按键就绪:ADC1_CH%d 三键分压", BSP_BTN_ADC_CHANNEL);
+    return ESP_OK;
+}
+
+esp_err_t bsp_button_prepare_deep_sleep(int *level) {
+    if (level) *level = 0;
+    // The ADC must be gone before the pad works as a digital input again.
+    button_cleanup();
+    if (s_adc || s_cali) return ESP_ERR_INVALID_STATE;
+
+    int io = -1;
+    esp_err_t e = adc_oneshot_channel_to_io(BSP_BTN_ADC_UNIT, BSP_BTN_ADC_CHANNEL, &io);
+    if (e != ESP_OK) return e;
+    // The external 10 kOhm pull-up keeps the idle node high. The internal pull-up
+    // (ESP-IDF also enables it for the sleep itself) lifts the OK key from about
+    // 0.6 V to 0.7 V, still below the 0.25 x VDD low threshold, so all keys wake.
+    const gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << io,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    e = gpio_config(&cfg);
+    if (e != ESP_OK) return e;
+    esp_rom_delay_us(100);  // let the pad settle after leaving analog mode
+
+    const int pad = gpio_get_level(io);
+    if (level) *level = pad;
+    if (!pad) {
+        ESP_LOGW(TAG, "GPIO%d 为低电平(按键按住),不武装深睡唤醒", io);
+        return ESP_ERR_INVALID_STATE;
+    }
+    // The first argument is a pin bit mask: GPIO0 as a plain 0 arms nothing.
+    e = esp_deep_sleep_enable_gpio_wakeup(1ULL << io, ESP_GPIO_WAKEUP_GPIO_LOW);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO%d 深睡唤醒武装失败: %s", io, esp_err_to_name(e));
+        return e;
+    }
+    ESP_LOGI(TAG, "按键唤醒就绪:GPIO%d 低电平", io);
     return ESP_OK;
 }
 

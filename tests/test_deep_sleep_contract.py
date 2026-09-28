@@ -54,6 +54,7 @@ class DeepSleepContractTest(unittest.TestCase):
         cls.display = read("components/bsp/src/bsp_display.c")
         cls.i2c = read("components/bsp/src/bsp_i2c.c")
         cls.demo = read("main/demo_low_power.c")
+        cls.button = read("components/bsp/src/bsp_button.c")
 
     def test_es8311_force_sleep_sequence_is_complete_and_ordered(self) -> None:
         expected = [
@@ -152,6 +153,22 @@ class DeepSleepContractTest(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertLess(body.index("bsp_lvgl_lock(1000)"),
                         body.index("bsp_display_prepare_deep_sleep()"))
+
+    def test_key_wake_releases_the_adc_before_arming(self) -> None:
+        # While the ADC owns GPIO0 its digital level reads 0, which would satisfy
+        # a low-level wake at once; the wake mask is a bit mask, not a pin number.
+        body = function_body(self.button, "bsp_button_prepare_deep_sleep")
+        calls = [
+            "button_cleanup()",
+            "gpio_config(&cfg)",
+            "gpio_get_level(io)",
+            "esp_deep_sleep_enable_gpio_wakeup(1ULL << io, ESP_GPIO_WAKEUP_GPIO_LOW)",
+        ]
+        positions = [body.index(call) for call in calls]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("GPIO_MODE_INPUT", body)
+        self.assertIn("GPIO_PULLUP_ENABLE", body)
+        self.assertIn("if (s_adc || s_cali) return ESP_ERR_INVALID_STATE;", body)
 
 
 if __name__ == "__main__":
