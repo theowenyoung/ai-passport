@@ -3,21 +3,29 @@
 // Threading: button callbacks only enqueue; the app task owns all state and
 // takes the LVGL lock for every LVGL call. The toast timer runs in the LVGL
 // task and only hides the toast.
+//
+// Power: the screen dims after 30 s and the chip enters deep sleep after 2 min
+// idle. Any key wakes it; waking restarts the firmware, which shows a fresh card.
 #include "blog_ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "bsp_audio.h"
 #include "bsp_battery.h"
 #include "bsp_button.h"
 #include "bsp_display.h"
+#include "bsp_i2c.h"
 #include "card_layout.h"
 #include "card_pack.h"
 #include "card_sched.h"
 #include "card_store.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_sleep.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -55,6 +63,12 @@ static const char *TAG = "blog_ui";
 
 #define DIM_AFTER_MS  30000
 #define OFF_AFTER_MS  120000
+// Deep sleep waits while a key is held or a USB host is attached (sleep would
+// drop the serial port that `blog_cards.py update` uses); retry at this pace.
+#define SLEEP_RETRY_MS 10000
+// After a key wake, a press reported this soon after the keys start is the
+// waking press still held down.
+#define WAKE_GUARD_MS 300
 #define SAVE_AFTER_MS 8000
 #define BATTERY_MS    30000
 #define TOAST_MS      1400
@@ -92,9 +106,13 @@ enum { MENU_KEEP, MENU_HIDE, MENU_UNHIDE, MENU_BRIGHTNESS, MENU_BACK, MENU_COUNT
 typedef struct {
     bsp_btn_t btn;
     bsp_btn_ev_t ev;
+    int64_t at_ms;  // when the button driver reported it
 } key_event_t;
 
+// POWER_OFF is the short stretch between the backlight going dark and deep
+// sleep; it lasts longer only while sleep has to wait.
 typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_t;
+typedef enum { WAKE_GUARD_OFF, WAKE_GUARD_ARMED, WAKE_GUARD_HELD } wake_guard_t;
 
 // Card data and schedule (app task only).
 static card_pack_t s_pack;
@@ -120,6 +138,8 @@ static bool s_in_menu;
 static int s_menu_sel;
 static bool s_dirty;
 static int64_t s_last_input_ms, s_last_change_ms, s_last_battery_ms;
+static int64_t s_sleep_retry_ms, s_wake_guard_until_ms;
+static wake_guard_t s_wake_guard;
 static power_t s_power = POWER_ON;
 static uint8_t s_brightness;
 static int s_battery = -1;
@@ -654,8 +674,31 @@ static void handle_menu_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     }
 }
 
+// After a key wake the waking press may still be held when the keys start. Its
+// events (a press at once, then a click or long press on release) belong to the
+// wake, which already showed a fresh card, so they are dropped.
+static bool swallow_wake_press(const key_event_t *key)
+{
+    switch (s_wake_guard) {
+    case WAKE_GUARD_ARMED:
+        if (key->ev == BSP_BTN_PRESS && key->at_ms <= s_wake_guard_until_ms) {
+            s_wake_guard = WAKE_GUARD_HELD;
+            return true;
+        }
+        s_wake_guard = WAKE_GUARD_OFF;
+        return false;
+    case WAKE_GUARD_HELD:
+        if (key->ev != BSP_BTN_PRESS) s_wake_guard = WAKE_GUARD_OFF;
+        return true;
+    case WAKE_GUARD_OFF:
+        break;
+    }
+    return false;
+}
+
 static void handle_key(const key_event_t *key)
 {
+    if (swallow_wake_press(key)) return;
     if (key->ev == BSP_BTN_PRESS) return;  // act on click/double/long only
     s_last_input_ms = now_ms();
     if (s_power == POWER_OFF) {
@@ -674,6 +717,46 @@ static void handle_key(const key_event_t *key)
     else handle_card_key(key->btn, key->ev);
 }
 
+static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user);
+
+static void log_sleep_step(const char *step, esp_err_t err)
+{
+    if (err != ESP_OK) ESP_LOGW(TAG, "deep sleep continues: %s failed: %s", step, esp_err_to_name(err));
+}
+
+// Save, release the key pin as a wake source, power the peripherals down in the
+// order the BSP requires, and sleep. Returns only when sleep has to wait.
+static void try_deep_sleep(void)
+{
+    if (usb_serial_jtag_is_connected()) return;
+    save_if_needed(true);
+    if (s_dirty) ESP_LOGW(TAG, "progress not saved; the last views will be lost");
+
+    int level = 0;
+    esp_err_t err = bsp_button_prepare_deep_sleep(&level);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "deep sleep postponed: %s (key pin level %d)", esp_err_to_name(err), level);
+        err = bsp_button_init(on_key, NULL);
+        if (err != ESP_OK) ESP_LOGE(TAG, "buttons unavailable: %s", esp_err_to_name(err));
+        return;
+    }
+
+    // Terminal from here: each step releases a bus that cannot come back
+    // without a restart. CW2017 and ES8311 share I2C, so both go before it.
+    ESP_LOGI(TAG, "entering deep sleep; any key wakes");
+    log_sleep_step("CW2017 suspend", bsp_battery_sleep());
+    log_sleep_step("ES8311 suspend", bsp_audio_sleep());
+    log_sleep_step("I2S pin release", bsp_audio_prepare_deep_sleep());
+    log_sleep_step("I2C pin release", bsp_i2c_prepare_deep_sleep());
+    // Wait for the current flush and keep LVGL from drawing to a sleeping panel.
+    if (!bsp_lvgl_lock(1000)) {
+        ESP_LOGE(TAG, "cannot stop LVGL before deep sleep; restarting");
+        esp_restart();
+    }
+    log_sleep_step("ST7789 suspend", bsp_display_prepare_deep_sleep());
+    esp_deep_sleep_start();
+}
+
 static void tick_housekeeping(void)
 {
     int64_t now = now_ms();
@@ -686,6 +769,11 @@ static void tick_housekeeping(void)
         save_if_needed(true);
         s_power = POWER_OFF;
         apply_backlight();
+        s_sleep_retry_ms = now;
+    }
+    if (s_power == POWER_OFF && now >= s_sleep_retry_ms) {
+        s_sleep_retry_ms = now + SLEEP_RETRY_MS;
+        try_deep_sleep();
     }
     save_if_needed(false);
 
@@ -717,7 +805,7 @@ static void app_task(void *arg)
 static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
 {
     (void)user;
-    const key_event_t key = { .btn = btn, .ev = ev };
+    const key_event_t key = { .btn = btn, .ev = ev, .at_ms = now_ms() };
     if (s_keys) (void)xQueueSend(s_keys, &key, 0);
 }
 
@@ -785,10 +873,16 @@ void blog_ui_start(void)
     apply_backlight();
     s_last_input_ms = s_last_battery_ms = now_ms();
 
+    bool key_wake = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO;
+    ESP_LOGI(TAG, "%s", key_wake ? "woken from deep sleep by a key" : "cold start");
     s_keys = xQueueCreate(8, sizeof(key_event_t));
     if (!s_keys || xTaskCreate(app_task, "blog_app", 8192, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "cannot start the app task");
         return;
+    }
+    if (key_wake) {
+        s_wake_guard_until_ms = now_ms() + WAKE_GUARD_MS;
+        s_wake_guard = WAKE_GUARD_ARMED;
     }
     err = bsp_button_init(on_key, NULL);
     if (err != ESP_OK) ESP_LOGE(TAG, "buttons unavailable: %s", esp_err_to_name(err));

@@ -9,5 +9,5 @@ idf_component_register(
          "../assets/fonts/blog-cards/blog_font_20.c"
          "../assets/fonts/blog-cards/blog_font_24.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp esp_hw_support esp_partition esp_timer nvs_flash
+    REQUIRES bsp esp_driver_usb_serial_jtag esp_hw_support esp_partition esp_timer nvs_flash
 )

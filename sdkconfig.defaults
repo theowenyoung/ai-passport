@@ -38,6 +38,12 @@ CONFIG_BUTTON_LONG_PRESS_TIME_MS=700
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
 
+# --- Bootloader ---
+# Blog Cards wakes from deep sleep on every key press. A cold boot still checks
+# the whole 5 MB image; a deep-sleep wake starts the partition that was checked
+# then instead of hashing it again, which saves about 0.8 s. No Secure Boot.
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+
 # --- Radio ---
 # Blog Cards never uses Bluetooth or Wi-Fi; content arrives over USB.
 CONFIG_BT_ENABLED=n

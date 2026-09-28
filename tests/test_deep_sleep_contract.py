@@ -55,6 +55,7 @@ class DeepSleepContractTest(unittest.TestCase):
         cls.i2c = read("components/bsp/src/bsp_i2c.c")
         cls.demo = read("main/demo_low_power.c")
         cls.button = read("components/bsp/src/bsp_button.c")
+        cls.blog = read("main/blog_ui.c")
 
     def test_es8311_force_sleep_sequence_is_complete_and_ordered(self) -> None:
         expected = [
@@ -169,6 +170,27 @@ class DeepSleepContractTest(unittest.TestCase):
         self.assertIn("GPIO_MODE_INPUT", body)
         self.assertIn("GPIO_PULLUP_ENABLE", body)
         self.assertIn("if (s_adc || s_cali) return ESP_ERR_INVALID_STATE;", body)
+
+    def test_blog_cards_shutdown_order_precedes_deep_sleep(self) -> None:
+        body = function_body(self.blog, "try_deep_sleep")
+        calls = [
+            "usb_serial_jtag_is_connected()",
+            "save_if_needed(true)",
+            "bsp_button_prepare_deep_sleep(&level)",
+            "bsp_button_init(on_key, NULL)",
+            "bsp_battery_sleep()",
+            "bsp_audio_sleep()",
+            "bsp_audio_prepare_deep_sleep()",
+            "bsp_i2c_prepare_deep_sleep()",
+            "bsp_lvgl_lock(1000)",
+            "bsp_display_prepare_deep_sleep()",
+            "esp_deep_sleep_start()",
+        ]
+        positions = [body.index(call) for call in calls]
+        self.assertEqual(positions, sorted(positions))
+        # A held key resumes the buttons and returns before any bus is released.
+        resume = body.index("bsp_button_init(on_key, NULL)")
+        self.assertIn("return;", body[resume:body.index("bsp_battery_sleep()")])
 
 
 if __name__ == "__main__":

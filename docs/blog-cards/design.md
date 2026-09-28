@@ -105,7 +105,7 @@ The body text uses Noto Sans SC at 24, 20, and 16 px, converted to LVGL bitmap f
 
 **Menu.** A long OK press (700 ms) opens: keep/unkeep this card, hide this card, restore hidden cards, brightness (high/medium/low), back. It also shows how many cards were read and kept, and when the pack was built.
 
-**Power.** After 30 s without input the backlight dims; after 2 minutes it turns off. The first press after that only wakes the screen and draws a fresh card. Deep sleep is not used yet.
+**Power.** After 30 s without input the backlight dims. After 2 minutes the device saves progress, turns the screen off, and enters deep sleep; any of the three keys wakes it. Waking restarts the firmware and draws a fresh card. To keep that quick, the bootloader starts the image it verified at the last cold boot instead of hashing all 5 MB again (`CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP`); a reset or power-on still verifies it. Events from the waking press are ignored, so holding that key a little longer does not also turn the page or open the menu. Deep sleep waits while a key is held, and while a computer is attached over USB, because sleep would drop the serial port that `update` uses; in both cases only the backlight turns off. If `update` cannot find the device, it is asleep: press any key and run the command again. Standby current has not been measured.
 
 **Progress storage.** Only remembered cards take space, 12 bytes each. The `cardstat` partition holds two alternating copies with a CRC. The device writes 8 s after the last change, before the screen turns off, and immediately after hiding or restoring cards. After a content update, cards with the same id keep their progress, and entries for cards that disappeared are dropped on the next write.
 

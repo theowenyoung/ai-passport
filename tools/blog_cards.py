@@ -727,7 +727,9 @@ def find_port(explicit: str | None) -> str:
         return explicit
     ports = sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
     if not ports:
-        raise BlogCardsError("no device found: turn it on and connect it with a data USB cable")
+        raise BlogCardsError(
+            "no device found: connect it with a data USB cable; if it is asleep, press any key to wake it"
+        )
     if len(ports) > 1:
         raise BlogCardsError(f"several serial ports found ({', '.join(ports)}); pass --port")
     return ports[0]
