@@ -15,6 +15,13 @@
 - 添加字库前评估 Flash 与内部 RAM 影响；ESP32-C3 无 PSRAM。
 - 不提交许可不允许分发的字库。
 
+| 文件 | 格式 | 用途与来源 |
+| --- | --- | --- |
+| [`fonts/timer/timer_digits_100.c`](fonts/timer/timer_digits_100.c)、[`timer_digits_80.c`](fonts/timer/timer_digits_80.c) | LVGL 4 bpp 位图字库，100 与 80 px，未压缩；`0-9` 和 `:`（80 px 另含 `+`）；字形位图约 19 KB 与 13 KB | 分享计时器的倒计时与超时数字。Noto Sans SC 的数字等宽，计时时数字不会左右跳动。 |
+| [`fonts/timer/timer_text_26.c`](fonts/timer/timer_text_26.c)、[`timer_text_20.c`](fonts/timer/timer_text_20.c) | LVGL 4 bpp 位图字库，26 与 20 px，未压缩；覆盖 [`charset.txt`](fonts/timer/charset.txt) 中的 125 个字形；字形位图约 20 KB 与 12 KB | 计时器的段落标签（26 px）和按键提示（20 px）：可打印 ASCII，加上 `main/timer_ui.c` 字符串字面量里的全部汉字。 |
+
+四个字库都由 Noto Sans SC Medium（`notofonts/noto-cjk` 标签 `Sans2.004`，工具会校验 SHA-256）用 `lv_font_conv@1.5.3` 转换，遵循 SIL Open Font License 1.1，许可证复制在 [`fonts/timer/OFL.txt`](fonts/timer/OFL.txt)。由 `main/CMakeLists.txt` 编入固件。修改任何界面文字后，运行 `python3 tools/timer_fonts.py`（需要 Node.js）并重新编译；只要有要显示的字符缺字，`tests/test_timer_fonts.py` 就会失败。
+
 ## 图片（images）
 
 可复用的源图与生成的显示资产放在 `images/`。

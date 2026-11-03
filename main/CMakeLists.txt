@@ -1,16 +1,12 @@
 idf_component_register(
     SRCS "main.c"
-         "demo_navigation.c"
-         "ui_pixel.c"
-         "ui_pixel_math.c"
-         "demo_display.c"
-         "demo_button.c"
-         "demo_audio.c"
-         "demo_battery.c"
-         "demo_radio.c"
-         "demo_wifi.c"
-         "demo_ble.c"
-         "demo_low_power.c"
+         "round_timer.c"
+         "timer_sound.c"
+         "timer_ui.c"
+         "../assets/fonts/timer/timer_digits_100.c"
+         "../assets/fonts/timer/timer_digits_80.c"
+         "../assets/fonts/timer/timer_text_26.c"
+         "../assets/fonts/timer/timer_text_20.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash
+    REQUIRES bsp esp_driver_usb_serial_jtag esp_hw_support esp_timer
 )

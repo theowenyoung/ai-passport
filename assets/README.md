@@ -17,6 +17,13 @@ Store reusable font files and generated font sources in `fonts/`.
 - Check Flash and internal-RAM impact before adding a font; the ESP32-C3 has no PSRAM.
 - Do not commit fonts whose license does not permit redistribution.
 
+| File | Format | Use and source |
+| --- | --- | --- |
+| [`fonts/timer/timer_digits_100.c`](fonts/timer/timer_digits_100.c), [`timer_digits_80.c`](fonts/timer/timer_digits_80.c) | LVGL 4 bpp bitmap fonts, 100 and 80 px, uncompressed; `0-9` and `:` (80 px adds `+`); about 19 KB and 13 KB of glyph bitmaps | The speaker timer's countdown and overtime digits. Noto Sans SC has equal-width digits, so the clock does not shift as it counts. |
+| [`fonts/timer/timer_text_26.c`](fonts/timer/timer_text_26.c), [`timer_text_20.c`](fonts/timer/timer_text_20.c) | LVGL 4 bpp bitmap fonts, 26 and 20 px, uncompressed; the 125 glyphs in [`charset.txt`](fonts/timer/charset.txt); about 20 KB and 12 KB of glyph bitmaps | The timer's segment labels (26 px) and key hints (20 px): printable ASCII plus every Chinese character in the string literals of `main/timer_ui.c`. |
+
+All four are converted from Noto Sans SC Medium (`notofonts/noto-cjk` tag `Sans2.004`, SHA-256 checked by the tool) under the SIL Open Font License 1.1, copied to [`fonts/timer/OFL.txt`](fonts/timer/OFL.txt), with `lv_font_conv@1.5.3`. `main/CMakeLists.txt` builds them into the firmware. After changing any UI string, run `python3 tools/timer_fonts.py` (needs Node.js) and rebuild; `tests/test_timer_fonts.py` fails while a drawn character is missing.
+
 ## Images
 
 Store reusable source images and generated display assets in `images/`.
